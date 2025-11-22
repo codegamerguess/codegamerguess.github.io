@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Угадай код — Без повторений</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#004d40" />
+
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      padding: 2rem;
+      background: #e0f7fa;
+      color: #004d40;
+      margin: 0;
+    }
+    .game {
+      max-width: 480px;
+      margin: auto;
+      background: white;
+      padding: 2rem;
+      border-radius: 1rem;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);
+    }
+    input[type="text"] {
+      font-size: 1.2rem;
+      padding: 0.7rem;
+      width: 100%;
+      margin-bottom: 1rem;
+      border: 2px solid #80cbc4;
+      border-radius: 0.5rem;
+      box-sizing: border-box;
+    }
+    button {
+      font-size: 1rem;
+      padding: 0.6rem 1.2rem;
+      margin-top: 0.5rem;
+      background-color: #4db6ac;
+      border: none;
+      color: white;
+      border-radius: 0.5rem;
+      cursor: pointer;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    button:hover {
+      background-color: #00897b;
+    }
+    .hint {
+      background: #e0f2f1;
+      margin: 0.4rem 0;
+      padding: 0.5rem;
+      border-radius: 0.4rem;
+      font-family: monospace;
+    }
+    .result {
+      font-weight: bold;
+      margin-top: 1rem;
+      color: #00695c;
+    }
+    textarea {
+      width: 100%;
+      height: 80px;
+      margin-top: 1rem;
+      padding: 0.5rem;
+      font-family: monospace;
+      border: 2px dashed #b2dfdb;
+      border-radius: 0.5rem;
+      resize: vertical;
+      box-sizing: border-box;
+    }
+    canvas {
+      width: 100%;
+      height: 200px;
+      margin-top: 1rem;
+      border: 2px dotted #80cbc4;
+      border-radius: 0.5rem;
+      touch-action: none;
+    }
+    .clear-btn {
+      margin-top: 0.5rem;
+      background-color: #ff8a65;
+    }
+    .clear-btn:hover {
+      background-color: #d84315;
+    }
+    .digit {
+      display: inline-block;
+      width: 24px;
+      height: 32px;
+      text-align: center;
+      line-height: 32px;
+      margin: 0 2px;
+      font-weight: bold;
+      border-radius: 5px;
+    }
+    .green { background-color: #a5d6a7; }
+    .yellow { background-color: #fff59d; }
+    .gray { background-color: #eceff1; }
+
+    @media (max-width: 600px) {
+      body {
+        padding: 1rem;
+      }
+      .game {
+        padding: 1rem;
+      }
+      h2, h3 {
+        font-size: 1.2rem;
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="game">
+  <h2>Угадай 4-значный код (без повторений)</h2>
+  <label>
+    <input type="text" id="guess" placeholder="Например: 1234" maxlength="4" inputmode="numeric" />
+  </label>
+  <p style="font-family:monospace">Подбери код без повторяющихся цифр, у тебя 3 попытки!<br><span style="color: #a5d6a7;"><b>Зеленая цифра</b></span> - на месте, <span style="color: #fff59d;"><b>желтая</b></span> - есть, но не на месте.</p>
+  <button onclick="checkGuess()">Проверить</button>
+  <div id="feedback"></div>
+  <div id="result" class="result"></div>
+  <div id="hints"></div>
+
+  <h3>Черновик (текст)</h3>
+  <textarea id="notes" placeholder="Пиши сюда варианты, цифры, анализ..."></textarea>
+  <button class="clear-btn" onclick="clearCanvas()">Очистить черновик</button>
+
+  <h3>Черновик (рисование)</h3>
+  <canvas id="sketch"></canvas>
+</div>
+
+<script>
+   
+   const sounds = {
+      click: new Audio('sounds/click.wav'),
+      hint: new Audio('sounds/hint.wav'),
+      success: new Audio('sounds/success.wav'),
+      fail: new Audio('sounds/fail.wav'),
+      win: new Audio('sounds/win.wav'),
+      erase: new Audio('sounds/erase.wav')
+    };
+let secret = [];
+let hintData = [];
+let attempts = 0;
+
+function generateCode() {
+    const digits = '0123456789'.split('');
+    let result = '';
+    for (let i = 0; i < 4; i++) {
+        const idx = Math.floor(Math.random() * digits.length);
+        result += digits[idx];
+        digits.splice(idx, 1);
+    }
+    return result;
+}
+
+function evaluateGuess(secret, guess) {
+    let correctPlace = 0;
+    let correctDigit = 0;
+    const usedSecret = Array(4).fill(false);
+    const usedGuess = Array(4).fill(false);
+
+    for (let i = 0; i < 4; i++) {
+        if (guess[i] === secret[i]) {
+            correctPlace++;
+            usedSecret[i] = true;
+            usedGuess[i] = true;
+        }
+    }
+
+    for (let i = 0; i < 4; i++) {
+        if (usedGuess[i]) continue;
+        for (let j = 0; j < 4; j++) {
+            if (!usedSecret[j] && guess[i] === secret[j]) {
+                correctDigit++;
+                usedSecret[j] = true;
+                break;
+            }
+        }
+    }
+
+    return { correctPlace, correctDigit };
+}
+
+function describeHint(secret, guess) {
+    const { correctPlace, correctDigit } = evaluateGuess(secret, guess);
+
+    if (correctPlace === 0 && correctDigit === 0)
+        return "Ни одной верной цифры";
+    if (correctPlace === 1 && correctDigit === 0)
+        return "Одна цифра верна и на своём месте";
+    if (correctPlace === 0 && correctDigit === 1)
+        return "Одна цифра верна, но не на своём месте";
+    if (correctPlace === 0 && correctDigit === 2)
+        return "Две цифры верны, но не на своих местах";
+    if (correctPlace === 1 && correctDigit === 1)
+        return "Две цифры верны: одна на месте, одна — нет";
+    if (correctPlace === 2 && correctDigit === 0)
+        return "Две цифры верны и на своих местах";
+
+    return `${correctPlace} на месте, ${correctDigit} не на месте`;
+}
+
+function generateHints(secret) {
+    const usedGuesses = new Set();
+    const hints = [];
+
+    function generateCandidate(conditionFn) {
+        let attempts = 0;
+        while (attempts++ < 1000) {
+            const candidate = generateCode();
+            if (usedGuesses.has(candidate) || candidate === secret) continue;
+            const { correctPlace, correctDigit } = evaluateGuess(secret, candidate);
+            if (conditionFn(correctPlace, correctDigit)) {
+                usedGuesses.add(candidate);
+                return { guess: candidate, hint: describeHint(secret, candidate) };
+            }
+        }
+        return null;
+    }
+
+    const conditions = [
+        (cp, cd) => cp === 0 && cd === 1,
+        (cp, cd) => cp === 0 && cd === 2,
+        (cp, cd) => cp === 1 && cd === 0,
+        (cp, cd) => cp === 0 && cd === 0,
+        (cp, cd) => cp === 1 && cd === 1,
+    ];
+
+    for (const cond of conditions) {
+        const result = generateCandidate(cond);
+        if (result) hints.push(result);
+    }
+
+    return hints;
+}
+
+function showHints() {
+
+  const hintContainer = document.getElementById("hints");
+  hintContainer.innerHTML = '<h3>Подсказки:</h3>';
+  hintData.forEach((h, i) => {
+    const div = document.createElement("div");
+    div.innerText = `${h.guess} — ${h.hint}`;
+    hintContainer.appendChild(div);
+  });
+}
+
+function checkGuess() {
+  sounds.click.play();
+  const input = document.getElementById('guess').value.trim();
+  const resultEl = document.getElementById('result');
+  if (!/^\d{4}$/.test(input)) {
+    resultEl.textContent = 'Введите ровно 4 цифры (0–9).';
+    return;
+  }
+
+  const guess = input.split('').map(Number);
+  const hasRepeats = new Set(guess).size !== guess.length;
+  if (hasRepeats) {
+    resultEl.textContent = 'Цифры не должны повторяться.';
+    sounds.hint.play();
+    return;
+  }
+
+  const res = document.createElement('div');
+  res.className = 'result';
+  let correct = 0;
+
+  for (let i = 0; i < 4; i++) {
+      const span = document.createElement('span');
+      span.textContent = guess[i].toString();
+      if (guess[i].toString() === secret[i].toString()) {
+        span.className = 'digit green';
+        correct++;
+      } else if (secret.includes(guess[i].toString())) {
+        span.className = 'digit yellow';
+      } else {
+        span.className = 'digit grey';
+      }
+      res.appendChild(span);
+  }
+
+  feedbackEl.appendChild(res);
+
+  if (input.toString() === secret.toString()) {
+    result.textContent = '🎉 Верно! Ты угадал код!';
+    sounds.win.play();
+  } else {
+    attempts++;
+    if (attempts >= 3) {
+      result.textContent = `😢 Неверно. Правильный код был: ${secret.toString()}`;
+      sounds.fail.play();
+    } else {
+      result.textContent = `Неверно. Осталось ${3 - attempts} попытки.`;
+      sounds.success.play();
+    }
+  }
+}
+
+function startGame() {
+  secret = generateCode();
+  hintData = generateHints(secret);
+  attempts = 0;
+  document.getElementById('hints').innerHTML = '';
+  document.getElementById('feedback').textContent = '';
+  document.getElementById('guess').value = '';
+  showHints();
+}
+
+// Рисование черновика на canvas
+const canvas = document.getElementById('sketch');
+const feedbackEl = document.getElementById('feedback');
+const ctx = canvas.getContext('2d');
+canvas.width = canvas.offsetWidth;
+canvas.height = canvas.offsetHeight;
+let drawing = false;
+
+canvas.addEventListener('pointerdown', e => {
+  drawing = true;
+  ctx.beginPath();
+  ctx.moveTo(e.offsetX, e.offsetY);
+});
+canvas.addEventListener('pointermove', e => {
+  if (!drawing) return;
+  ctx.lineTo(e.offsetX, e.offsetY);
+  ctx.strokeStyle = '#004d40';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+});
+canvas.addEventListener('pointerup', () => {
+  drawing = false;
+});
+canvas.addEventListener('pointerleave', () => {
+  drawing = false;
+});
+
+function clearCanvas() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  document.getElementById('notes').value = '';
+  sounds.erase.play();
+}
+
+startGame();
+</script>
+</body>
+</html>

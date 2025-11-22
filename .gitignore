@@ -1,0 +1,25 @@
+    .vs/*
+    *.suo
+    *.user
+    *.bak
+    *.ncb
+    *.opensdf
+    *.sdf
+    *.vsscc
+    *.vspscc
+    *.vssscc
+    *_i.c
+    *_p.c
+    *.log
+    *.lib
+    *.sbr
+    *.pch
+    *.res
+    *.tlb
+    *.tlh
+    *.tmp
+    *.obj
+    *.pdb
+    *.ilk
+    *.ipch
+/.vs
